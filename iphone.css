@@ -1,0 +1,170 @@
+/* iphone.css - Compressed layout for single-screen view */
+
+/* 1. Force the main screen to take exactly the phone screen height (no scrolling) */
+body, html {
+  height: 100%;
+  overflow: hidden; /* Prevent global scroll */
+}
+
+#app {
+  height: 100dvh; /* Dynamic Viewport Height handles Safari URL bar */
+  display: flex;
+  flex-direction: column;
+}
+
+#main-screen.active {
+  display: flex;
+  flex-direction: column;
+  height: 100dvh;
+  padding: 0 16px; /* Remove bottom padding, handled by flex spacing */
+  overflow: hidden;
+}
+
+/* 2. Header: Make it compact */
+.app-header {
+  flex: 0 0 auto; /* Don't grow or shrink */
+  padding: 12px 0 8px 0;
+  border-bottom: none; /* Cleaner look for mobile */
+}
+.app-header h1 {
+  font-size: 1.25rem;
+}
+.header-with-toggle{
+  position: relative;
+  justify-content: center; /* keep title centered */
+}
+
+.header-with-toggle .provider-toggle{
+  position: absolute;
+  right: 0;
+  top: 50%;
+  transform: translateY(-50%);
+}
+
+.header-with-toggle #providerSelect{
+  height: 32px;
+  padding: 4px 8px;
+  border-radius: 10px;
+  border: 1px solid #334155;
+  background: rgba(11, 18, 33, 0.9);
+  color: var(--text);
+  font-size: 0.85rem;
+}
+
+/* 3. Genre Grid: The key to fitting everything */
+/* This makes the grid take up all available empty space */
+.buttons-grid.two-cols-four-rows {
+  flex: 0 0 auto;              /* <-- was 1 1 auto */
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  grid-auto-rows: 52px;        /* fixed row height (tweak: 46–60) */
+  gap: 8px;
+  margin: 4px 0 12px 0;
+}
+
+/* Remove fixed height so buttons squash to fit the screen */
+.genre-btn.tall {
+  height: 60px;                /* match grid-auto-rows */
+  min-height: 52px;
+  padding: 6px 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  font-size: 0.9rem;
+  white-space: normal;
+}
+
+/* 4. Result Card: Compact */
+.center-wrap {
+  flex: 0 0 auto;
+  margin: 0 0 12px 0;
+  width: 100%;
+}
+.result-card {
+  min-height: 74px;           
+  padding: 10px 12px;
+  align-items: flex-start;    
+}
+.result-card .title {
+  font-size: 1rem;
+}
+#nowPlayingText{
+  white-space: normal;        /* allow wrapping */
+  overflow: hidden;
+  text-overflow: clip;        /* don’t force ellipsis */
+  display: -webkit-box;
+  -webkit-line-clamp: 2;      /* show up to 2 lines */
+  -webkit-box-orient: vertical;
+}
+.copy-btn {
+  min-width: 60px;
+  min-height: 32px;
+  font-size: 0.85rem;
+}
+
+/* 5. Recent Bar: Compact and tucked above bottom bar */
+#recentBar {
+  flex: 0 0 auto;
+  margin-bottom: 0px;
+   padding-bottom: 90px;/* Leave space for the floating bottom bar */
+  max-height: 22vh; /* Don't let recent history eat the whole screen */
+  overflow-y: auto;
+}
+#recentBar h3 {
+  font-size: 0.85rem;
+  margin: 0 0 4px 0;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  color: var(--muted);
+}
+#recentList .item-row {
+  padding: 4px 0;
+  font-size: 0.8rem;
+  border-bottom: 1px solid rgba(255,255,255,0.1);
+}
+
+/* 6. Bottom Actions: Floating Overlay */
+.bottom-actions.fixed-bottom {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  padding: 10px 18px calc(env(safe-area-inset-bottom) + 12px);
+  background: rgba(11, 18, 33, 0.95); /* High opacity background */
+  backdrop-filter: blur(10px);
+  border-top: 1px solid #334155;
+  z-index: 50;
+  display: flex;
+  justify-content: space-between;
+}
+.bottom-actions.fixed-bottom { outline: 2px solid red; }
+
+/* Adjust circle size slightly for mobile proportions */
+.circle-icon {
+  width: 40px; 
+  height: 40px;
+}
+.icon-label {
+  font-size: 22px;
+}
+
+/* 7. Hide "Import Report" on main screen mobile to save space */
+#mainImportReport {
+  display: none;
+}
+
+/* 8. Tweaks for the Add/Archive screens (which scroll normally) */
+#add-screen, #archive-screen {
+  height: 100dvh;
+  overflow-y: auto;
+  padding-bottom: 40px;
+
+}
+
+
+
+
+
+
+
