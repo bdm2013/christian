@@ -41,7 +41,6 @@ body, html {
   transform: translateY(-50%);
 }
 
-/* UPDATED: provider select ID changed in HTML (#providerSelectAdd) */
 .header-with-toggle #providerSelectAdd{
   height: 32px;
   padding: 4px 8px;
@@ -52,19 +51,18 @@ body, html {
   font-size: 0.85rem;
 }
 
-/* 3. Decade Grid (2 columns x 3 rows) */
+/* 3. Decade Grid */
 .buttons-grid.two-cols-three-rows {
-  flex: 0 0 auto;              /* keep compact on mobile */
+  flex: 0 0 auto;
   display: grid;
   grid-template-columns: 1fr 1fr;
-  grid-auto-rows: 52px;        /* fixed row height (tweak: 46–60) */
+  grid-auto-rows: 52px;
   gap: 8px;
   margin: 4px 0 12px 0;
 }
 
-/* UPDATED: .genre-btn -> .decade-btn */
 .decade-btn.tall {
-  height: 60px;                /* match grid-auto-rows */
+  height: 60px;
   min-height: 52px;
   padding: 6px 8px;
   display: flex;
@@ -90,11 +88,11 @@ body, html {
   font-size: 1rem;
 }
 #nowPlayingText{
-  white-space: normal;        /* allow wrapping */
+  white-space: normal;
   overflow: hidden;
-  text-overflow: clip;        /* don’t force ellipsis */
+  text-overflow: clip;
   display: -webkit-box;
-  -webkit-line-clamp: 2;      /* show up to 2 lines */
+  -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
 }
 .copy-btn {
@@ -103,12 +101,12 @@ body, html {
   font-size: 0.85rem;
 }
 
-/* 5. Recent Bar: Compact and tucked above bottom bar */
+/* 5. Recent Bar */
 #recentBar {
   flex: 0 0 auto;
   margin-bottom: 0px;
-  padding-bottom: 90px; /* Leave space for the floating bottom bar */
-  max-height: 22vh; /* Don't let recent history eat the whole screen */
+  padding-bottom: 90px;
+  max-height: 22vh;
   overflow-y: auto;
 }
 #recentBar h3 {
@@ -131,7 +129,7 @@ body, html {
   left: 0;
   right: 0;
   padding: 10px 18px calc(env(safe-area-inset-bottom) + 12px);
-  background: rgba(11, 18, 33, 0.95); /* High opacity background */
+  background: rgba(11, 18, 33, 0.95);
   backdrop-filter: blur(10px);
   border-top: 1px solid #334155;
   z-index: 50;
@@ -140,7 +138,6 @@ body, html {
 }
 .bottom-actions.fixed-bottom { outline: 2px solid red; }
 
-/* Adjust circle size slightly for mobile proportions */
 .circle-icon {
   width: 40px;
   height: 40px;
@@ -150,11 +147,9 @@ body, html {
 }
 
 /* 7. Hide "Import Report" on main screen mobile to save space */
-#mainImportReport {
-  display: none;
-}
+#mainImportReport { display: none; }
 
-/* 8. Tweaks for the Add/Archive screens (which scroll normally) */
+/* 8. Add/Archive screens scroll */
 #add-screen, #archive-screen {
   height: 100dvh;
   overflow-y: auto;
