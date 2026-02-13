@@ -6,15 +6,15 @@
 
 /* ---------- Constants ---------- */
 
-const DECADES = [
+const BUCKETS = [
+  "Random",
   "1970s",
   "1980s",
   "1990s",
   "2000s",
-  "2010s",
-  "2020s"
+  "2010s+"
 ];
-const DISPLAY_DECADES = DECADES.slice();
+const DISPLAY_BUCKETS = BUCKETS.filter(b => b !== "Random");
 
 const STORAGE_KEY = "songPicker.songs";
 const ARCHIVE_KEY = "songPicker.archive";
@@ -24,10 +24,7 @@ const PROVIDER_KEY = "songPicker.provider";
 const CSV_DELIM = "@";
 const RECENT_MAX = 4;
 
-/* ---------- Firebase (Manual) ----------
-   This uses Firestore as a "single master doc" store (manual pull/push).
-   IMPORTANT: Firestore docs have a ~1 MiB limit. If you may exceed it, we should chunk.
-*/
+/* ---------- Firebase (Manual) ---------- */
 const FIREBASE_ENABLED = true;
 
 const firebaseConfig = {
@@ -40,7 +37,6 @@ const firebaseConfig = {
   measurementId: "G-KY6JCNTTC1"
 };
 
-// Firestore document path to store the master CSV: "collection/docId"
 const FIREBASE_DOC_PATH = "songs/christian";
 
 /* Firebase SDK imports (ESM) */
@@ -93,8 +89,8 @@ function saveProvider(v) {
 /* ---------- Filter state ---------- */
 
 const filters = {
-  current: { query: "", decade: "" },
-  archive: { query: "", decade: "" }
+  current: { query: "", bucket: "" },
+  archive: { query: "", bucket: "" }
 };
 
 /* ---------- Elements ---------- */
@@ -108,7 +104,7 @@ const screens = {
 const resultEl = document.getElementById("result");
 const recentListEl = document.getElementById("recentList");
 
-// Provider selects (UPDATED IDS)
+// Provider selects
 const providerSelectMain = document.getElementById("providerSelectMain");
 const providerSelectAdd = document.getElementById("providerSelectAdd");
 
@@ -123,6 +119,7 @@ const providerSelectAdd = document.getElementById("providerSelectAdd");
   });
 });
 
+// Main bar buttons
 const addSongNavBtn = document.getElementById("add-song-nav");
 const importCsvBtn = document.getElementById("import-csv-btn");
 const importReplaceBtn = document.getElementById("import-replace-btn");
@@ -131,8 +128,8 @@ const firebasePullBtn = document.getElementById("firebase-pull-btn");
 const firebasePushBtn = document.getElementById("firebase-push-btn");
 const importCsvFileInput = document.getElementById("import-csv-file");
 
-// Decade grid + copy (UPDATED)
-const decadeButtons = Array.from(document.querySelectorAll(".decade-btn"));
+// Bucket buttons + copy
+const bucketButtons = Array.from(document.querySelectorAll(".decade-btn")); // includes Random
 const copySongBtn = document.getElementById("copySongBtn");
 
 // Add screen
@@ -168,16 +165,15 @@ const importReportTarget = (() => {
   return el;
 })();
 
-/* ---------- Decade helpers ---------- */
+/* ---------- Bucket helpers ---------- */
 
-function decadeFromYear(year) {
+function bucketFromYear(year) {
   if (!Number.isFinite(year)) return "";
   if (year >= 1970 && year <= 1979) return "1970s";
   if (year >= 1980 && year <= 1989) return "1980s";
   if (year >= 1990 && year <= 1999) return "1990s";
   if (year >= 2000 && year <= 2009) return "2000s";
-  if (year >= 2010 && year <= 2019) return "2010s";
-  if (year >= 2020 && year <= 2029) return "2020s";
+  if (year >= 2010 && year <= 2029) return "2010s+";
   return "";
 }
 
@@ -193,48 +189,6 @@ function validateSong({ artist, title, year }) {
 
 function randomItem(arr) {
   return arr[Math.floor(Math.random() * arr.length)];
-}
-
-/**
- * Replace-import from raw text (CSV or @-delimited), overwriting songs+archive.
- * Returns { report, routed, duplicatesInCsv } for consistent UI + meta.
- */
-function importReplaceFromText(text) {
-  const smart = parseCsvSmart(text, []); // ignore existing list for replace
-  const { validSongs, failedLines, duplicatesInCsv, __routed } = smart;
-
-  let currentRows = [];
-  let archiveRows = [];
-
-  if (__routed === "status") {
-    const { currentRows: cr, archiveRows: ar } = parseCsvWithStatus(text);
-    currentRows = cr.map(s => normalizeSongStrings(s));
-    archiveRows = ar.map(s => normalizeSongStrings(s));
-  } else {
-    currentRows = validSongs.map(s => normalizeSongStrings(s));
-    archiveRows = [];
-  }
-
-  const { current, archived } = ensureUniqueIdsAcrossLists(currentRows, archiveRows);
-  songs = current;
-  archive = archived;
-
-  saveSongs(songs);
-  saveArchive(archive);
-
-  refreshSongList();
-  refreshArchiveList();
-
-  return {
-    routed: __routed,
-    duplicatesInCsv,
-    report: {
-      successCount: songs.length + archive.length,
-      duplicatesTotal: duplicatesInCsv,
-      failedCount: failedLines.length,
-      failedLines
-    }
-  };
 }
 
 /* ---------- Inject filter controls ---------- */
@@ -270,22 +224,31 @@ navCurrentBtn?.addEventListener("click", () => {
   showScreen("add");
 });
 
-/* ---------- Decade buttons ---------- */
+/* ---------- Bucket buttons (includes Random) ---------- */
 
-decadeButtons.forEach(btn => {
+bucketButtons.forEach(btn => {
   btn.addEventListener("click", () => {
-    const decade = btn.dataset.decade;
-    pickAndArchiveForDecade(decade);
+    const bucket = btn.dataset.decade; // "Random" or bucket name
+    if (bucket === "Random") {
+      const bucketsWithSongs = DISPLAY_BUCKETS.filter(b => songs.some(s => bucketFromYear(s.year) === b));
+      if (bucketsWithSongs.length === 0) {
+        renderResult(null, "No songs yet (songs need a Year). Add or import some!");
+        return;
+      }
+      pickAndArchiveForBucket(randomItem(bucketsWithSongs));
+      return;
+    }
+    pickAndArchiveForBucket(bucket);
   });
 });
 
 /* ---------- Pick and archive ---------- */
 
-async function pickAndArchiveForDecade(decade) {
-  const pool = songs.filter(s => decadeFromYear(s.year) === decade);
+async function pickAndArchiveForBucket(bucket) {
+  const pool = songs.filter(s => bucketFromYear(s.year) === bucket);
 
   if (pool.length === 0) {
-    renderResult(null, `No songs in ${decade} yet (songs need a Year). Add or import some!`);
+    renderResult(null, `No songs in ${bucket} yet (songs need a Year). Add or import some!`);
     return;
   }
 
@@ -341,7 +304,7 @@ copySongBtn?.addEventListener("click", () => {
     .catch(() => notify("Copy failed."));
 });
 
-/* ---------- Local Import buttons ---------- */
+/* ---------- Local Import / Export ---------- */
 
 importCsvBtn?.addEventListener("click", () => {
   if (!importCsvFileInput) return alert("File input not found.");
@@ -360,6 +323,126 @@ importReplaceBtn?.addEventListener("click", () => {
   importCsvFileInput.click();
 });
 
+/* ---------- Core helpers that were missing in the original snippet ---------- */
+
+function normalizeText(s) {
+  if (!s) return s;
+  return String(s)
+    .replace(/\uFFFD/g, "")
+    .replace(/\u2018|\u2019|\u02BC/g, "’")
+    .replace(/\u201C|\u201D/g, '"')
+    .replace(/\u2013/g, "–")
+    .replace(/\u2014/g, "—")
+    .replace(/\u2026/g, "…")
+    .replace(/\u00A0/g, " ");
+}
+
+function normalizeSongStrings(s) {
+  return {
+    ...s,
+    artist: normalizeText(s.artist),
+    title: normalizeText(s.title),
+    year: s.year ?? null,
+    bucket: s.bucket || bucketFromYear(s.year) || ""
+  };
+}
+
+function normalizeYearOptional(y) {
+  const str = String(y ?? "")
+    .replace(/\u00A0/g, " ")
+    .replace(/[\u200B-\u200D\uFEFF]/g, "")
+    .trim();
+  if (str === "") return null;
+
+  const m = str.match(/\b(19\d{2}|20\d{2})\b/);
+  if (!m) return null;
+
+  const num = Number(m[1]);
+  return Number.isFinite(num) ? num : null;
+}
+
+function makeId() {
+  if (window.crypto?.getRandomValues) {
+    const buf = new Uint8Array(8);
+    crypto.getRandomValues(buf);
+    return Array.from(buf).map(b => b.toString(16).padStart(2, "0")).join("");
+  }
+  return Math.random().toString(36).slice(2, 10);
+}
+
+function ensureUniqueIdsAcrossLists(currentRows, archiveRows) {
+  const seen = new Set();
+  function fix(list) {
+    return list.map(s => {
+      let id = s?.id ? String(s.id) : "";
+      if (!id || seen.has(id)) id = makeId();
+      seen.add(id);
+      return { ...s, id };
+    });
+  }
+  return { current: fix(currentRows), archived: fix(archiveRows) };
+}
+
+/* ---------- Storage helpers ---------- */
+
+function saveSongs(list) { localStorage.setItem(STORAGE_KEY, JSON.stringify(list)); }
+function loadSongs() {
+  try { const raw = localStorage.getItem(STORAGE_KEY); return raw ? JSON.parse(raw) : []; }
+  catch { return []; }
+}
+
+function saveArchive(list) { localStorage.setItem(ARCHIVE_KEY, JSON.stringify(list)); }
+function loadArchive() {
+  try { const raw = localStorage.getItem(ARCHIVE_KEY); return raw ? JSON.parse(raw) : []; }
+  catch { return []; }
+}
+
+function saveRecent(list) { localStorage.setItem(RECENT_KEY, JSON.stringify(list)); }
+function loadRecent() {
+  try { const raw = localStorage.getItem(RECENT_KEY); return raw ? JSON.parse(raw) : []; }
+  catch { return []; }
+}
+
+/* ---------- Import/Replace core ---------- */
+
+function importReplaceFromText(text) {
+  const smart = parseCsvSmart(text, []);
+  const { validSongs, failedLines, duplicatesInCsv, __routed } = smart;
+
+  let currentRows = [];
+  let archiveRows = [];
+
+  if (__routed === "status") {
+    const { currentRows: cr, archiveRows: ar } = parseCsvWithStatus(text);
+    currentRows = cr.map(s => normalizeSongStrings(s));
+    archiveRows = ar.map(s => normalizeSongStrings(s));
+  } else {
+    currentRows = validSongs.map(s => normalizeSongStrings(s));
+    archiveRows = [];
+  }
+
+  const { current, archived } = ensureUniqueIdsAcrossLists(currentRows, archiveRows);
+  songs = current;
+  archive = archived;
+
+  saveSongs(songs);
+  saveArchive(archive);
+
+  refreshSongList();
+  refreshArchiveList();
+
+  return {
+    routed: __routed,
+    duplicatesInCsv,
+    report: {
+      successCount: songs.length + archive.length,
+      duplicatesTotal: duplicatesInCsv,
+      failedCount: failedLines.length,
+      failedLines
+    }
+  };
+}
+
 /* Local Import handler */
 importCsvFileInput?.addEventListener("change", async (e) => {
   const file = e.target.files?.[0];
@@ -370,7 +453,6 @@ importCsvFileInput?.addEventListener("change", async (e) => {
 
     if (importMode === "replace") {
       const outcome = importReplaceFromText(text);
-
       renderImportReport(outcome.report);
       saveLastImportMeta({
         mode: "replace",
@@ -437,7 +519,7 @@ importCsvFileInput?.addEventListener("change", async (e) => {
   }
 });
 
-/* ---------- Local Export ---------- */
+/* ---------- Export ---------- */
 
 exportCsvBtn?.addEventListener("click", async () => {
   const csv = allSongsToCsv(songs, archive, { withBom: true });
@@ -743,8 +825,8 @@ songForm?.addEventListener("submit", async (e) => {
     return;
   }
 
-  const decade = decadeFromYear(year);
-  const newSong = { id: makeId(), artist: artistInput, title: titleInput, year, decade };
+  const bucket = bucketFromYear(year);
+  const newSong = { id: makeId(), artist: artistInput, title: titleInput, year, bucket };
   songs.push(newSong);
   saveSongs(songs);
   songForm.reset();
@@ -752,30 +834,25 @@ songForm?.addEventListener("submit", async (e) => {
   showScreen("main");
 
   const yearText = year != null ? `(${year})` : "";
-  const decadeText = decade ? ` in ${decade}` : "";
-  renderResult(null, `Added: ${titleInput} by ${artistInput}${yearText}${decadeText}`);
+  const bucketText = bucket ? ` in ${bucket}` : "";
+  renderResult(null, `Added: ${titleInput} by ${artistInput}${yearText}${bucketText}`);
 });
 
 /* ---------- Playback Integration (Apple Music + YouTube Music) ---------- */
 
 const YT_API_KEY = "AIzaSyDTKFXhB4ddJJdafUjMqVrNqjTKBd2T_tU";
 
-// iphone.css is loaded for max-width: 768px, so use the same condition in JS
 function isIphoneLayout() {
   return window.matchMedia("(max-width: 768px)").matches;
 }
 
-/**
- * Build YouTube queries.
- * (No longer based on genre; just use Title + Artist variants.)
- */
 function buildYouTubeQueries({ title, artist }) {
   const base = `${title} ${artist}`.trim();
   return [`${base} lyrics`, `${base} audio`, base];
 }
 
 const PlaybackManager = (() => {
-  const TAB_TARGET = "player-tab"; // reuse same external tab
+  const TAB_TARGET = "player-tab";
 
   async function playSong({ title, artist }) {
     if (!title || !artist) return;
@@ -836,6 +913,7 @@ const PlaybackManager = (() => {
 
   function openInTab(url) {
     const target = isIphoneLayout() ? "_self" : TAB_TARGET;
+
     const win = window.open(url, target);
     if (!win) {
       alert("Please allow popups for this site to open the music player.");
@@ -866,7 +944,7 @@ const PlaybackManager = (() => {
     url.searchParams.set("part", "snippet");
     url.searchParams.set("q", query);
     url.searchParams.set("type", "video");
-    url.searchParams.set("videoCategoryId", "10"); // Music
+    url.searchParams.set("videoCategoryId", "10");
     url.searchParams.set("maxResults", "1");
     url.searchParams.set("key", YT_API_KEY);
 
@@ -924,20 +1002,20 @@ function injectFilterControls({ containerSelector, scope, onChange }) {
   anyOpt.textContent = "All decades";
   select.appendChild(anyOpt);
 
-  DISPLAY_DECADES.forEach(d => {
+  DISPLAY_BUCKETS.forEach(b => {
     const opt = document.createElement("option");
-    opt.value = d;
-    opt.textContent = d;
+    opt.value = b;
+    opt.textContent = (b === "2010s+") ? "2010s + 2020s" : b;
     select.appendChild(opt);
   });
-  select.value = filters[scope].decade;
+  select.value = filters[scope].bucket;
 
   search.addEventListener("input", () => {
     filters[scope].query = search.value.trim();
     onChange?.();
   });
   select.addEventListener("change", () => {
-    filters[scope].decade = select.value;
+    filters[scope].bucket = select.value;
     onChange?.();
   });
 
@@ -952,19 +1030,19 @@ function injectFilterControls({ containerSelector, scope, onChange }) {
 }
 
 function applyFilters(list, scope) {
-  const { query, decade } = filters[scope];
+  const { query, bucket } = filters[scope];
   const q = query.toLowerCase();
 
   return list.filter(s => {
-    const sDecade = decadeFromYear(s.year);
-    const matchesDecade = !decade || sDecade === decade;
+    const sBucket = bucketFromYear(s.year);
+    const matchesBucket = !bucket || sBucket === bucket;
 
     const matchesQuery =
       !q ||
       String(s.title || "").toLowerCase().includes(q) ||
       String(s.artist || "").toLowerCase().includes(q);
 
-    return matchesDecade && matchesQuery;
+    return matchesBucket && matchesQuery;
   });
 }
 
@@ -990,7 +1068,37 @@ function renderResultWithDelay(song, delayMs = 500) {
       <div id="nowPlayingText" class="title" style="visibility:hidden;"></div>
       <div class="subtitle"></div>
     </div>
+    <button type="button" id="copySongBtn" class="copy-btn" title="Copy" aria-label="Copy">Copy</button>
   `;
+
+  // Re-wire copy button after innerHTML rewrite
+  resultEl.querySelector("#copySongBtn")?.addEventListener("click", () => {
+    const nowPlayingEl = resultEl?.querySelector("#nowPlayingText");
+    const txt = nowPlayingEl?.textContent || "";
+    if (!txt || txt === "No song selected yet") {
+      notify("Nothing to copy yet.");
+      return;
+    }
+    let t = "";
+    let a = "";
+    const emDashParts = txt.split(" — ");
+    if (emDashParts.length >= 2) {
+      t = emDashParts[0].trim();
+      a = emDashParts[1].replace(/\s*\(\d{4}\)\s*$/, "").trim();
+    } else {
+      const hyphenParts = txt.split(" - ");
+      if (hyphenParts.length >= 2) {
+        t = hyphenParts[0].trim();
+        a = hyphenParts[1].replace(/\s*\(\d{4}\)\s*$/, "").trim();
+      } else {
+        t = txt.trim();
+      }
+    }
+    const toCopy = a ? `${t} — ${a}` : t;
+    navigator.clipboard.writeText(toCopy)
+      .then(() => notify("Copied Title — Artist to clipboard."))
+      .catch(() => notify("Copy failed."));
+  });
 
   const show = () => {
     const nowPlayingEl = resultEl.querySelector("#nowPlayingText");
@@ -1011,7 +1119,9 @@ function renderResult(song, message) {
       '<div class="meta">' +
         '<div class="title">' + escapeHtml(message || "No selection") + '</div>' +
         '<div class="subtitle">Use the decade buttons to pick a song.</div>' +
-      '</div>';
+      '</div>' +
+      '<button type="button" id="copySongBtn" class="copy-btn" title="Copy" aria-label="Copy">Copy</button>';
+    // (Copy button already wired globally; leaving as-is)
     return;
   }
 
@@ -1022,8 +1132,11 @@ function renderResult(song, message) {
     '<div class="meta">' +
       '<div id="nowPlayingText" class="title">' + text + '</div>' +
       '<div class="subtitle"></div>' +
-    '</div>';
+    '</div>' +
+    '<button type="button" id="copySongBtn" class="copy-btn" title="Copy" aria-label="Copy">Copy</button>';
 }
+
+/* ---------- Lists ---------- */
 
 function refreshSongList() {
   if (currentCountsEl) currentCountsEl.innerHTML = renderCounts(songs);
@@ -1038,13 +1151,13 @@ function refreshSongList() {
   songListEl.innerHTML = filtered
     .map(function(s) {
       const yearText = (s.year != null) ? "(" + s.year + ")" : "";
-      const decade = decadeFromYear(s.year);
-      const decadeBadge = decade ? ('<span class="count-badge">' + escapeHtml(decade) + "</span>") : "";
+      const bucket = bucketFromYear(s.year);
+      const badge = bucket ? ('<span class="count-badge">' + escapeHtml(bucket === "2010s+" ? "2010s + 2020s" : bucket) + "</span>") : "";
       return '<li>' +
         '<div class="item-row">' +
           '<div class="item-meta">' +
             '<span class="title">' + escapeHtml(s.title) + ' — ' + escapeHtml(s.artist) + escapeHtml(yearText) + '</span>' +
-            decadeBadge +
+            badge +
           '</div>' +
           '<div class="actions">' +
             '<button type="button" class="icon-btn" data-action="archive" data-id="' + escapeHtml(String(s.id)) + '">Archive</button>' +
@@ -1069,13 +1182,13 @@ function refreshArchiveList() {
   archiveListEl.innerHTML = filtered
     .map(function(s) {
       const yearText = (s.year != null) ? "(" + s.year + ")" : "";
-      const decade = decadeFromYear(s.year);
-      const decadeBadge = decade ? ('<span class="count-badge">' + escapeHtml(decade) + "</span>") : "";
+      const bucket = bucketFromYear(s.year);
+      const badge = bucket ? ('<span class="count-badge">' + escapeHtml(bucket === "2010s+" ? "2010s + 2020s" : bucket) + "</span>") : "";
       return '<li>' +
         '<div class="item-row">' +
           '<div class="item-meta">' +
             '<span class="title">' + escapeHtml(s.title) + ' — ' + escapeHtml(s.artist) + escapeHtml(yearText) + '</span>' +
-            decadeBadge +
+            badge +
           '</div>' +
           '<div class="actions">' +
             '<button type="button" class="icon-btn" data-action="restore" data-id="' + escapeHtml(String(s.id)) + '">Return</button>' +
@@ -1088,41 +1201,22 @@ function refreshArchiveList() {
 }
 
 function renderCounts(list) {
-  const counts = Object.fromEntries(DISPLAY_DECADES.map(function(d) { return [d, 0]; }));
+  const counts = Object.fromEntries(DISPLAY_BUCKETS.map(function(b) { return [b, 0]; }));
   for (let i = 0; i < list.length; i++) {
     const s = list[i];
-    const d = decadeFromYear(s.year);
-    if (d && counts[d] !== undefined) counts[d]++;
+    const b = bucketFromYear(s.year);
+    if (b && counts[b] !== undefined) counts[b]++;
   }
   const total = list.length;
 
-  const badges = DISPLAY_DECADES
-    .map(function(d) {
-      return '<span class="count-badge">' + d + ": " + counts[d] + "</span>";
+  const badges = DISPLAY_BUCKETS
+    .map(function(b) {
+      const label = (b === "2010s+") ? "2010s + 2020s" : b;
+      return '<span class="count-badge">' + label + ": " + counts[b] + "</span>";
     })
     .join(" ");
 
   return '<span class="count-badge">Total: ' + total + "</span> " + badges;
-}
-
-/* ---------- Storage helpers ---------- */
-
-function saveSongs(list) { localStorage.setItem(STORAGE_KEY, JSON.stringify(list)); }
-function loadSongs() {
-  try { const raw = localStorage.getItem(STORAGE_KEY); return raw ? JSON.parse(raw) : []; }
-  catch { return []; }
-}
-
-function saveArchive(list) { localStorage.setItem(ARCHIVE_KEY, JSON.stringify(list)); }
-function loadArchive() {
-  try { const raw = localStorage.getItem(ARCHIVE_KEY); return raw ? JSON.parse(raw) : []; }
-  catch { return []; }
-}
-
-function saveRecent(list) { localStorage.setItem(RECENT_KEY, JSON.stringify(list)); }
-function loadRecent() {
-  try { const raw = localStorage.getItem(RECENT_KEY); return raw ? JSON.parse(raw) : []; }
-  catch { return []; }
 }
 
 /* ---------- Recent ---------- */
@@ -1156,15 +1250,34 @@ function renderRecent() {
     .join("");
 }
 
-/* ---------- HTML escape + notify + download ---------- */
+/* ---------- Filtering + CSV parsing ---------- */
 
-function escapeHtml(str) {
-  return String(str)
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("'", "&#39;");
+function decodeFileText(file) {
+  return file.arrayBuffer().then(buf => {
+    let text = new TextDecoder("utf-8", { fatal: false }).decode(buf);
+    if (!looksCorrupt(text)) return text;
+    try {
+      const cpText = new TextDecoder("windows-1252", { fatal: false }).decode(buf);
+      if (countReplacement(cpText) < countReplacement(text)) return cpText;
+      return text;
+    } catch {
+      return text;
+    }
+  });
+}
+
+function looksCorrupt(s) { return countReplacement(s) >= 2; }
+function countReplacement(s) { const m = s.match(/\uFFFD/g); return m ? m.length : 0; }
+
+function downloadBlob(blob, filename) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
 }
 
 function notify(text) {
@@ -1195,124 +1308,195 @@ function notify(text) {
   } catch (_) {}
 }
 
-function downloadBlob(blob, filename) {
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = filename;
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  URL.revokeObjectURL(url);
+function escapeHtml(str) {
+  return String(str)
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#39;");
 }
 
-/* ---------- Normalizers + IDs ---------- */
-
-function normalizeText(s) {
-  if (!s) return s;
-  return String(s)
-    .replace(/\uFFFD/g, "")
-    .replace(/\u2018|\u2019|\u02BC/g, "’")
-    .replace(/\u201C|\u201D/g, '"')
-    .replace(/\u2013/g, "–")
-    .replace(/\u2014/g, "—")
-    .replace(/\u2026/g, "…")
-    .replace(/\u00A0/g, " ");
+function detectDelimiter(text, defaultDelim) {
+  const firstLine = (text.split(/\r?\n/)[0] || "");
+  const commaCount = (firstLine.match(/,/g) || []).length;
+  const atCount = (firstLine.match(/@/g) || []).length;
+  if (commaCount > atCount) return ",";
+  if (atCount > 0) return "@";
+  return defaultDelim;
 }
 
-function normalizeSongStrings(s) {
-  return {
-    ...s,
-    artist: normalizeText(s.artist),
-    title: normalizeText(s.title),
-    year: s.year ?? null,
-    decade: s.decade || decadeFromYear(s.year)
-  };
-}
+function parseDelimitedLine(line, delim) {
+  const out = [];
+  let cur = "";
+  let inQuotes = false;
 
-function normalizeYearOptional(y) {
-  const str = String(y ?? "")
-    .replace(/\u00A0/g, " ")
-    .replace(/[\u200B-\u200D\uFEFF]/g, "")
-    .trim();
-  if (str === "") return null;
-
-  const m = str.match(/\b(19\d{2}|20\d{2})\b/);
-  if (!m) return null;
-
-  const num = Number(m[1]);
-  return Number.isFinite(num) ? num : null;
-}
-
-function normalizeDecade(_ignoredDecadeRaw, yearRaw) {
-  // Import rule: decade is ALWAYS derived from year (ignore any decade/genre column).
-  const y = (typeof yearRaw === "number") ? yearRaw : normalizeYearOptional(yearRaw);
-  return decadeFromYear(y) || "";
-}
-
-function makeId() {
-  if (window.crypto?.getRandomValues) {
-    const buf = new Uint8Array(8);
-    crypto.getRandomValues(buf);
-    return Array.from(buf).map(b => b.toString(16).padStart(2, "0")).join("");
+  for (let i = 0; i < line.length; i++) {
+    const ch = line[i];
+    if (inQuotes) {
+      if (ch === '"') {
+        if (line[i + 1] === '"') { cur += '"'; i++; }
+        else { inQuotes = false; }
+      } else {
+        cur += ch;
+      }
+    } else {
+      if (ch === '"') inQuotes = true;
+      else if (ch === delim) { out.push(cur); cur = ""; }
+      else cur += ch;
+    }
   }
-  return Math.random().toString(36).slice(2, 10);
+  out.push(cur);
+  return out.map(s => s.trim());
 }
 
-function ensureUniqueIdsAcrossLists(currentRows, archiveRows) {
-  const seen = new Set();
-  function fix(list) {
-    return list.map(s => {
-      let id = s?.id ? String(s.id) : "";
-      if (!id || seen.has(id)) id = makeId();
-      seen.add(id);
-      return { ...s, id };
-    });
+/* Import rule: must have year; bucket computed from year; ignore any bucket/decade/genre cols */
+function parseCsvWithReport(text, existingSongs = []) {
+  const delim = detectDelimiter(text, CSV_DELIM);
+  const lines = text.split(/\r?\n/).map(l => l.replace(/[\u0000-\u0008\u000B-\u001F\u007F]/g, ""));
+
+  if (lines.length === 0) return { validSongs: [], failedLines: [], duplicatesInCsv: 0, duplicatesVsCurrent: 0 };
+
+  const headerCols = parseDelimitedLine(lines[0] || "", delim).map(s => s.toLowerCase());
+  const hasHeader = headerCols.some(c => ["artist", "title", "year"].includes(c));
+  const startIdx = hasHeader ? 1 : 0;
+
+  let idxArtist = 0, idxTitle = 1, idxYear = 2;
+  if (hasHeader) {
+    idxArtist = headerCols.indexOf("artist");
+    idxTitle = headerCols.indexOf("title");
+    idxYear = headerCols.indexOf("year");
   }
-  return { current: fix(currentRows), archived: fix(archiveRows) };
-}
 
-/* ---------- File decode ---------- */
+  const validSongs = [];
+  const failedLines = [];
+  let duplicatesInCsv = 0;
+  let duplicatesVsCurrent = 0;
 
-async function decodeFileText(file) {
-  const buf = await file.arrayBuffer();
+  const seenKeys = new Set();
+  const keyOf = (s) => [String(s.artist||"").trim().toLowerCase(), String(s.title||"").trim().toLowerCase(), s.year ?? ""].join("|");
+  const existingSet = new Set(existingSongs.map(keyOf));
 
-  let text = new TextDecoder("utf-8", { fatal: false }).decode(buf);
-  if (!looksCorrupt(text)) return text;
+  for (let i = startIdx; i < lines.length; i++) {
+    const rawLine = lines[i];
+    if (!rawLine || !rawLine.trim()) continue;
 
-  try {
-    const cp1252Decoder = new TextDecoder("windows-1252", { fatal: false });
-    const cpText = cp1252Decoder.decode(buf);
-    if (countReplacement(cpText) < countReplacement(text)) return cpText;
-    return text;
-  } catch {
-    return text;
+    let cols;
+    try { cols = parseDelimitedLine(rawLine, delim); }
+    catch { failedLines.push(rawLine); continue; }
+
+    const artist = String(cols[idxArtist] ?? "").trim();
+    const title = String(cols[idxTitle] ?? "").trim();
+    const year = normalizeYearOptional(cols[idxYear] ?? "");
+
+    if (year == null) { failedLines.push(rawLine); continue; }
+
+    const errors = validateSong({ artist, title, year });
+    if (errors.length) { failedLines.push(rawLine); continue; }
+
+    const k = [artist.toLowerCase(), title.toLowerCase(), year].join("|");
+    if (seenKeys.has(k)) { duplicatesInCsv++; continue; }
+    seenKeys.add(k);
+
+    if (existingSet.has(k)) { duplicatesVsCurrent++; continue; }
+
+    validSongs.push({ id: makeId(), artist, title, year, bucket: bucketFromYear(year) });
   }
+
+  return { validSongs, failedLines, duplicatesInCsv, duplicatesVsCurrent };
 }
 
-function looksCorrupt(s) { return countReplacement(s) >= 2; }
-function countReplacement(s) {
-  const m = s.match(/\uFFFD/g);
-  return m ? m.length : 0;
+function parseCsvWithStatus(text) {
+  const delim = detectDelimiter(text, CSV_DELIM);
+  const lines = text.split(/\r?\n/).map(l => l.replace(/[\u0000-\u0008\u000B-\u001F\u007F]/g, ""));
+
+  if (lines.length === 0) return { currentRows: [], archiveRows: [], failedLines: [], duplicatesInCsv: 0 };
+
+  const headerCols = parseDelimitedLine(lines[0] || "", delim).map(s => s.toLowerCase());
+  const hasHeader = headerCols.includes("status") && headerCols.includes("artist") && headerCols.includes("title");
+  const startIdx = hasHeader ? 1 : 0;
+
+  let idxStatus = 0, idxArtist = 1, idxTitle = 2, idxYear = 3;
+  if (hasHeader) {
+    idxStatus = headerCols.indexOf("status");
+    idxArtist = headerCols.indexOf("artist");
+    idxTitle = headerCols.indexOf("title");
+    idxYear = headerCols.indexOf("year"); // may be -1
+  }
+
+  const currentRows = [];
+  const archiveRows = [];
+  const failedLines = [];
+  let duplicatesInCsv = 0;
+  const seenKeys = new Set();
+
+  for (let i = startIdx; i < lines.length; i++) {
+    const rawLine = lines[i];
+    if (!rawLine || !rawLine.trim()) continue;
+
+    let cols;
+    try { cols = parseDelimitedLine(rawLine, delim); }
+    catch { failedLines.push(rawLine); continue; }
+
+    const status = String(cols[idxStatus] ?? "").trim();
+    const artist = String(cols[idxArtist] ?? "").trim();
+    const title = String(cols[idxTitle] ?? "").trim();
+    const yearRaw = (idxYear >= 0) ? (cols[idxYear] ?? "") : (cols[3] ?? "");
+    const year = normalizeYearOptional(yearRaw);
+
+    if (year == null) { failedLines.push(rawLine); continue; }
+
+    const validStatus = (status === "Current" || status === "Archive");
+    const errors = validateSong({ artist, title, year });
+    if (!validStatus || errors.length) { failedLines.push(rawLine); continue; }
+
+    const k = [status.toLowerCase(), artist.toLowerCase(), title.toLowerCase(), year].join("|");
+    if (seenKeys.has(k)) { duplicatesInCsv++; continue; }
+    seenKeys.add(k);
+
+    const entry = { id: makeId(), artist, title, year, bucket: bucketFromYear(year) };
+    if (status === "Current") currentRows.push(entry);
+    else archiveRows.push(entry);
+  }
+
+  return { currentRows, archiveRows, failedLines, duplicatesInCsv };
 }
 
-/* ---------- CSV export + filename ---------- */
+function parseCsvSmart(text, existingSongs = []) {
+  const delim = detectDelimiter(text, CSV_DELIM);
+  const lines = text.split(/\r?\n/).map(l => l.replace(/[\u0000-\u0008\u000B-\u001F\u007F]/g, ""));
+
+  if (lines.length === 0) {
+    return { validSongs: [], failedLines: [], duplicatesInCsv: 0, duplicatesVsCurrent: 0, __routed: "empty" };
+  }
+
+  const headerCols = parseDelimitedLine(lines[0] || "", delim).map(s => s.toLowerCase());
+  const hasHeader = headerCols.some(c => ["status", "artist", "title", "year", "decade", "genre"].includes(c));
+
+  let firstDataIdx = hasHeader ? 1 : 0;
+  while (firstDataIdx < lines.length && (!lines[firstDataIdx] || !lines[firstDataIdx].trim())) firstDataIdx++;
+  const firstCols = (lines[firstDataIdx] ? parseDelimitedLine(lines[firstDataIdx], delim) : []);
+  const looksStatusFirst =
+    firstCols.length >= 1 &&
+    ["current", "archive"].includes(String(firstCols[0] || "").trim().toLowerCase());
+
+  if ((hasHeader && headerCols.includes("status")) || looksStatusFirst) {
+    const { currentRows, archiveRows, failedLines, duplicatesInCsv } = parseCsvWithStatus(lines.join("\n"));
+    return { validSongs: [...currentRows, ...archiveRows], failedLines, duplicatesInCsv, duplicatesVsCurrent: 0, __routed: "status" };
+  }
+
+  const report = parseCsvWithReport(lines.join("\n"), existingSongs);
+  return { ...report, __routed: "report" };
+}
+
+/* ---------- CSV export ---------- */
 
 function allSongsToCsv(currentList, archiveList, opts = {}) {
-  // Keep a 5th column for readability, but it is computed from Year.
-  const header = ["Status", "Artist", "Title", "Year", "Decade"].join(CSV_DELIM);
-
+  const header = ["Status", "Artist", "Title", "Year", "Bucket"].join(CSV_DELIM);
   const toRows = (status, list) => list.map(s => {
-    const decade = decadeFromYear(s.year) || "";
-    return [
-      status,
-      csvEscape(s.artist),
-      csvEscape(s.title),
-      s.year ?? "",
-      csvEscape(decade)
-    ].join(CSV_DELIM);
+    const b = bucketFromYear(s.year) || "";
+    return [status, csvEscape(s.artist), csvEscape(s.title), s.year ?? "", csvEscape(b)].join(CSV_DELIM);
   });
-
   const body = [header, ...toRows("Current", currentList), ...toRows("Archive", archiveList)].join("\n");
   return opts.withBom ? "\uFEFF" + body : body;
 }
@@ -1338,311 +1522,7 @@ function makeTimestampedFilename() {
   return "(songs " + month + "-" + day + "-" + yearShort + ") " + hours + "-" + minutes + ".csv";
 }
 
-function detectDelimiter(text, defaultDelim) {
-  const firstLine = (text.split(/\r?\n/)[0] || "");
-  const commaCount = (firstLine.match(/,/g) || []).length;
-  const atCount = (firstLine.match(/@/g) || []).length;
-  if (commaCount > atCount) return ",";
-  if (atCount > 0) return "@";
-  return defaultDelim;
-}
-
-function parseCsvSmart(text, existingSongs = []) {
-  const delim = detectDelimiter(text, CSV_DELIM);
-  const lines = text.split(/\r?\n/);
-
-  // Remove ASCII control characters except tab (0x09)
-  for (let i = 0; i < lines.length; i++) {
-    lines[i] = lines[i].replace(/[\u0000-\u0008\u000B-\u001F\u007F]/g, "");
-  }
-
-  if (lines.length === 0) {
-    return {
-      validSongs: [],
-      failedLines: [],
-      duplicatesInCsv: 0,
-      duplicatesVsCurrent: 0,
-      __routed: "empty"
-    };
-  }
-
-  // Peek header (we accept lots of headers; we still only USE year/artist/title)
-  const headerLine = lines[0] || "";
-  const headerCols = parseDelimitedLine(headerLine, delim).map(s => s.toLowerCase());
-  const hasHeader = headerCols.some(c => ["status", "artist", "title", "year", "decade", "genre"].includes(c));
-
-  // Find first non-empty data line
-  let firstDataIdx = hasHeader ? 1 : 0;
-  while (firstDataIdx < lines.length && (!lines[firstDataIdx] || !lines[firstDataIdx].trim())) {
-    firstDataIdx++;
-  }
-  const firstDataLine = lines[firstDataIdx] || "";
-  const firstCols = firstDataLine ? parseDelimitedLine(firstDataLine, delim) : [];
-
-  const looksStatusFirst =
-    firstCols.length >= 1 &&
-    ["current", "archive"].includes(String(firstCols[0] || "").trim().toLowerCase());
-
-  // Route: status CSV vs plain CSV
-  if ((hasHeader && headerCols.includes("status")) || looksStatusFirst) {
-    const { currentRows, archiveRows, failedLines, duplicatesInCsv } = parseCsvWithStatus(lines.join("\n"));
-    const validSongs = [...currentRows, ...archiveRows];
-    return {
-      validSongs,
-      failedLines,
-      duplicatesInCsv,
-      duplicatesVsCurrent: 0,
-      __routed: "status"
-    };
-  }
-
-  const report = parseCsvWithReport(lines.join("\n"), existingSongs);
-  return { ...report, __routed: "report" };
-}
-
-function parseDelimitedLine(line, delim) {
-  const out = [];
-  let cur = "";
-  let inQuotes = false;
-
-  for (let i = 0; i < line.length; i++) {
-    const ch = line[i];
-    if (inQuotes) {
-      if (ch === '"') {
-        if (line[i + 1] === '"') {
-          cur += '"';
-          i++;
-        } else {
-          inQuotes = false;
-        }
-      } else {
-        cur += ch;
-      }
-    } else {
-      if (ch === '"') {
-        inQuotes = true;
-      } else if (ch === delim) {
-        out.push(cur);
-        cur = "";
-      } else {
-        cur += ch;
-      }
-    }
-  }
-  out.push(cur);
-  return out.map(s => s.trim());
-}
-
-/**
- * Plain CSV import (no Status column).
- * Import rule: must have Year; decade is derived from Year.
- * Accepts header or no-header.
- *
- * Expected no-header order: Artist, Title, Year, (ignored 4th col if present)
- */
-function parseCsvWithReport(text, existingSongs = []) {
-  const delim = detectDelimiter(text, CSV_DELIM);
-  const lines = text.split(/\r?\n/);
-
-  for (let i = 0; i < lines.length; i++) {
-    lines[i] = lines[i].replace(/[\u0000-\u0008\u000B-\u001F\u007F]/g, "");
-  }
-
-  if (lines.length === 0) {
-    return { validSongs: [], failedLines: [], duplicatesInCsv: 0, duplicatesVsCurrent: 0 };
-  }
-
-  const headerLine = lines[0] || "";
-  const headerCols = parseDelimitedLine(headerLine, delim).map(s => s.toLowerCase());
-  const hasHeader = headerCols.some(c => ["artist", "title", "year"].includes(c));
-  const startIdx = hasHeader ? 1 : 0;
-
-  let idxArtist = 0, idxTitle = 1, idxYear = 2;
-  if (hasHeader) {
-    idxArtist = headerCols.indexOf("artist");
-    idxTitle  = headerCols.indexOf("title");
-    idxYear   = headerCols.indexOf("year");
-  }
-
-  const validSongs = [];
-  const failedLines = [];
-  let duplicatesInCsv = 0;
-  let duplicatesVsCurrent = 0;
-
-  const seenKeys = new Set();
-  const keyOf = (s) => [
-    String(s.artist || "").trim().toLowerCase(),
-    String(s.title || "").trim().toLowerCase(),
-    s.year ?? ""
-  ].join("|");
-  const existingSet = new Set(existingSongs.map(keyOf));
-
-  for (let i = startIdx; i < lines.length; i++) {
-    const rawLine = lines[i];
-    if (!rawLine || rawLine.trim().length === 0) continue;
-
-    let cols;
-    try {
-      cols = parseDelimitedLine(rawLine, delim);
-    } catch {
-      failedLines.push(rawLine);
-      continue;
-    }
-
-    const artist = String(cols[idxArtist] ?? "").trim();
-    const title  = String(cols[idxTitle] ?? "").trim();
-    const yearRaw = cols[idxYear] ?? "";
-
-    const yearClean = String(yearRaw)
-      .replace(/\u00A0/g, " ")
-      .replace(/[\u200B-\u200D\uFEFF]/g, "")
-      .trim();
-    const year = normalizeYearOptional(yearClean);
-
-    // REQUIRED
-    if (year == null) {
-      failedLines.push(rawLine);
-      continue;
-    }
-
-    const errors = validateSong({ artist, title, year });
-    if (errors.length > 0) {
-      failedLines.push(rawLine);
-      continue;
-    }
-
-    const k = [artist.toLowerCase(), title.toLowerCase(), year].join("|");
-
-    if (seenKeys.has(k)) { duplicatesInCsv++; continue; }
-    seenKeys.add(k);
-
-    if (existingSet.has(k)) { duplicatesVsCurrent++; continue; }
-
-    validSongs.push({ id: makeId(), artist, title, year, decade: decadeFromYear(year) });
-  }
-
-  return { validSongs, failedLines, duplicatesInCsv, duplicatesVsCurrent };
-}
-
-/**
- * Status CSV import (Status, Artist, Title, Year, [ignored...])
- * Import rule: must have Year; decade is derived from Year.
- */
-function parseCsvWithStatus(text) {
-  const delim = detectDelimiter(text, CSV_DELIM);
-  const lines = text.split(/\r?\n/);
-
-  for (let i = 0; i < lines.length; i++) {
-    lines[i] = lines[i].replace(/[\u0000-\u0008\u000B-\u001F\u007F]/g, "");
-  }
-
-  if (lines.length === 0) {
-    return { currentRows: [], archiveRows: [], failedLines: [], duplicatesInCsv: 0 };
-  }
-
-  const headerLine = lines[0] || "";
-  const headerCols = parseDelimitedLine(headerLine, delim).map(s => s.toLowerCase());
-
-  const hasHeader =
-    headerCols.includes("status") &&
-    headerCols.includes("artist") &&
-    headerCols.includes("title");
-
-  const startIdx = hasHeader ? 1 : 0;
-
-  let idxStatus = 0, idxArtist = 1, idxTitle = 2, idxYear = 3;
-  if (hasHeader) {
-    idxStatus = headerCols.indexOf("status");
-    idxArtist = headerCols.indexOf("artist");
-    idxTitle  = headerCols.indexOf("title");
-    idxYear   = headerCols.indexOf("year"); // may be -1, we fallback below
-  }
-
-  const currentRows = [];
-  const archiveRows = [];
-  const failedLines = [];
-  let duplicatesInCsv = 0;
-
-  const seenKeys = new Set();
-
-  for (let i = startIdx; i < lines.length; i++) {
-    const rawLine = lines[i];
-    if (!rawLine || rawLine.trim().length === 0) continue;
-
-    let cols;
-    try {
-      cols = parseDelimitedLine(rawLine, delim);
-    } catch {
-      failedLines.push(rawLine);
-      continue;
-    }
-
-    const status = String(cols[idxStatus] ?? "").trim();
-    const artist = String(cols[idxArtist] ?? "").trim();
-    const title  = String(cols[idxTitle] ?? "").trim();
-
-    // If header exists but "year" column missing, fallback to position 4.
-    const yearRaw = (idxYear >= 0) ? (cols[idxYear] ?? "") : (cols[3] ?? "");
-
-    const yearClean = String(yearRaw)
-      .replace(/\u00A0/g, " ")
-      .replace(/[\u200B-\u200D\uFEFF]/g, "")
-      .trim();
-    const year = normalizeYearOptional(yearClean);
-
-    // REQUIRED
-    if (year == null) {
-      failedLines.push(rawLine);
-      continue;
-    }
-
-    const validStatus = (status === "Current" || status === "Archive");
-    const errors = validateSong({ artist, title, year });
-    if (!validStatus || errors.length > 0) {
-      failedLines.push(rawLine);
-      continue;
-    }
-
-    const k = [status.toLowerCase(), artist.toLowerCase(), title.toLowerCase(), year].join("|");
-    if (seenKeys.has(k)) { duplicatesInCsv++; continue; }
-    seenKeys.add(k);
-
-    const entry = { id: makeId(), artist, title, year, decade: decadeFromYear(year) };
-    if (status === "Current") currentRows.push(entry);
-    else archiveRows.push(entry);
-  }
-
-  return { currentRows, archiveRows, failedLines, duplicatesInCsv };
-}
-
-/* -------- Merge with existing list -------- */
-
-function mergeImportedSongs(imported) {
-  const keyOf = function(s) {
-    return [
-      s.artist.trim().toLowerCase(),
-      s.title.trim().toLowerCase(),
-      (s.year ?? "")
-    ].join("|");
-  };
-
-  const existing = new Set(songs.map(keyOf));
-  let added = 0;
-
-  for (let i = 0; i < imported.length; i++) {
-    const s = imported[i];
-    const k = keyOf(s);
-    if (!existing.has(k)) {
-      songs.push(s);
-      existing.add(k);
-      added++;
-    }
-  }
-  saveSongs(songs);
-  return added;
-}
-
-/* -------- Import report rendering -------- */
+/* ---------- Import report meta ---------- */
 
 function renderImportReport(params) {
   if (!importReportTarget) return;
@@ -1670,8 +1550,6 @@ function renderImportReport(params) {
     '<div class="count-badge">Failed: ' + failedCount + '</div>' +
     failedBlock;
 }
-
-/* -------- Last import meta -------- */
 
 function saveLastImportMeta(meta) {
   try { localStorage.setItem(LAST_IMPORT_META_KEY, JSON.stringify(meta)); } catch {}
@@ -1728,6 +1606,20 @@ function renderLastImportMeta() {
     '<div class="count-badge" style="display:block;">' +
       lines.map(escapeHtml).join("<br>") +
     "</div>";
+}
+
+/* ---------- Delete/Archive bulk actions & helpers ---------- */
+
+function renderResult(song, message) {
+  if (!resultEl) return;
+  if (!song) {
+    resultEl.innerHTML =
+      '<div class="meta">' +
+        '<div class="title">' + escapeHtml(message || "No selection") + '</div>' +
+        '<div class="subtitle">Use the decade buttons to pick a song.</div>' +
+      '</div>';
+    return;
+  }
 }
 
 /* ---------- Startup ---------- */
