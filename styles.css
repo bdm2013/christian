@@ -1,6 +1,3 @@
-/* styles.css */
-
-/* 1. Root Variables and Theme */
 :root {
   --bg: #0f172a;
   --card: #111827;
@@ -11,14 +8,13 @@
   --danger: #ef4444;
   --shadow: 0 8px 24px rgba(0,0,0,0.25);
 
-  /* Icon greens */
   --icon-green-bg: #16a34a;
   --icon-green-text: #062b16;
 }
 
-/* 2. Global Resets and Body */
 *, *::before, *::after { box-sizing: border-box; }
 html, body { height: 100%; }
+
 body {
   margin: 0;
   font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
@@ -26,14 +22,12 @@ body {
   color: var(--text);
 }
 
-/* App root fills viewport and stacks screens vertically */
 .app-root {
   min-height: 100vh;
   display: flex;
   flex-direction: column;
 }
 
-/* Screens take available vertical space */
 .screen {
   display: none;
   padding: 16px 16px 120px;
@@ -41,7 +35,6 @@ body {
 }
 .screen.active { display: block; }
 
-/* 3. Headers */
 .app-header {
   display: flex;
   align-items: center;
@@ -51,7 +44,7 @@ body {
 }
 .app-header h1, .app-header h2 { margin: 0; font-weight: 700; letter-spacing: 0.5px; }
 
-/* 4. Decade Grid */
+/* Buckets Grid */
 .buttons-grid.two-cols-three-rows {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -60,8 +53,8 @@ body {
 }
 @media (max-width: 520px) { .buttons-grid.two-cols-three-rows { grid-template-columns: 1fr; } }
 
-.decade-btn.tall { min-height: 96px; }
-.decade-btn, .random-btn {
+.bucket-btn.tall { min-height: 96px; }
+.bucket-btn, .random-btn {
   border: none;
   color: white;
   padding: 14px 16px;
@@ -72,17 +65,17 @@ body {
   font-size: 16px;
   line-height: 1.2;
 }
-.decade-btn:hover, .random-btn:hover { transform: translateY(-1px); filter: brightness(1.05); }
+.bucket-btn:hover, .random-btn:hover { transform: translateY(-1px); filter: brightness(1.05); }
 
-.decade-70s { background: #ef4444; }
-.decade-80s { background: #f59e0b; }
-.decade-90s { background: #10b981; }
-.decade-2000s { background: #3b82f6; }
-.decade-2010s-plus { background: #a855f7; }
+.bucket-70s80s { background: #ef4444; }
+.bucket-90s { background: #f59e0b; }
+.bucket-2000s { background: #3b82f6; }
+.bucket-2010s { background: #10b981; }
+.bucket-2020s { background: #a855f7; }
 
 .random-btn { background: #0b2a47; color: #cfe3ff; }
 
-/* 5. Centered Result Card */
+/* Result card */
 .center-wrap { display: flex; justify-content: center; margin: 16px 0 24px; }
 .result-card {
   width: 50%;
@@ -113,13 +106,9 @@ body {
 .result-card .title { font-weight: 700; }
 .result-card .subtitle { color: var(--muted); font-size: 0.95rem; }
 
-#nowPlayingText {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
+#nowPlayingText { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
-/* 6. Copy Button */
+/* Copy button */
 .copy-btn {
   display: inline-flex !important;
   align-items: center;
@@ -136,14 +125,13 @@ body {
   z-index: 2;
 }
 
-/* On very small screens, allow wrapping so the button doesn’t get squeezed */
 @media (max-width: 420px) {
   .result-card { flex-wrap: wrap; }
   .result-card .meta { flex-basis: 100%; }
   .copy-btn { margin-left: auto; }
 }
 
-/* 7. Form Card and inputs */
+/* Form */
 .form-card {
   max-width: 800px;
   margin: 0 auto 16px auto;
@@ -169,7 +157,7 @@ input:focus, select:focus { outline: 2px solid var(--accent2); }
 .primary { background: var(--accent2); color: white; border: none; padding: 12px 16px; border-radius: 10px; cursor: pointer; }
 .secondary { background: transparent; color: var(--text); border: 1px solid #334155; padding: 12px 16px; border-radius: 10px; cursor: pointer; }
 
-/* 8. Lists and toolbar */
+/* Lists + toolbar */
 .list-toolbar {
   max-width: 960px;
   margin: 0 auto 8px auto;
@@ -215,7 +203,7 @@ input:focus, select:focus { outline: 2px solid var(--accent2); }
 .item-meta { display: flex; align-items: center; gap: 8px; }
 .actions { display: flex; gap: 8px; }
 
-/* 9. Bottom Actions */
+/* Bottom actions */
 .bottom-actions {
   display: flex;
   justify-content: space-between;
@@ -226,7 +214,6 @@ input:focus, select:focus { outline: 2px solid var(--accent2); }
 .bottom-actions .left-actions { display: flex; gap: 16px; }
 .bottom-actions .right-actions { display: flex; gap: 16px; }
 
-/* Fixed to bottom with backdrop */
 .fixed-bottom {
   position: sticky;
   bottom: 0;
@@ -239,7 +226,6 @@ input:focus, select:focus { outline: 2px solid var(--accent2); }
   z-index: 10;
 }
 
-/* 10. Circle icons */
 .circle-icon {
   width: 66px;
   height: 66px;
