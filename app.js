@@ -209,6 +209,28 @@ navCurrentBtn?.addEventListener("click", () => {
   showScreen("add");
 });
 
+
+
+/* ---------- Bucket buttons (includes Random) ---------- */
+
+bucketButtons.forEach(btn => {
+  btn.addEventListener("click", () => {
+    const bucket = btn.dataset.bucket;
+
+    if (bucket === "Random") {
+      const bucketsWithSongs = DISPLAY_BUCKETS.filter(b => songs.some(s => bucketFromYear(s.year) === b));
+      if (bucketsWithSongs.length === 0) {
+        renderResult(null, "No songs yet (songs need a Year). Add or import some!");
+        return;
+      }
+      pickAndArchiveForBucket(randomItem(bucketsWithSongs));
+      return;
+    }
+
+    pickAndArchiveForBucket(bucket);
+  });
+});
+
 /* ---------- Playback Integration (Apple Music + YouTube Music) ---------- */
 
 const YT_API_KEY = "AIzaSyDTKFXhB4ddJJdafUjMqVrNqjTKBd2T_tU";
@@ -327,26 +349,6 @@ const PlaybackManager = (() => {
 
   return { playSong };
 })();
-
-/* ---------- Bucket buttons (includes Random) ---------- */
-
-bucketButtons.forEach(btn => {
-  btn.addEventListener("click", () => {
-    const bucket = btn.dataset.bucket;
-
-    if (bucket === "Random") {
-      const bucketsWithSongs = DISPLAY_BUCKETS.filter(b => songs.some(s => bucketFromYear(s.year) === b));
-      if (bucketsWithSongs.length === 0) {
-        renderResult(null, "No songs yet (songs need a Year). Add or import some!");
-        return;
-      }
-      pickAndArchiveForBucket(randomItem(bucketsWithSongs));
-      return;
-    }
-
-    pickAndArchiveForBucket(bucket);
-  });
-});
 
 /* ---------- Pick and archive ---------- */
 
@@ -1553,4 +1555,5 @@ refreshSongList();
 refreshArchiveList();
 renderRecent();
 renderLastImportMeta();
+
 
